@@ -5,8 +5,9 @@ pragma experimental ABIEncoderV2;
 import "./IHashmask.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/EnumerableMap.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract HashmaskSwapper {
+contract HashmaskSwapper is ReentrancyGuard {
 
   using EnumerableMap for EnumerableMap.UintToAddressMap;
 
@@ -36,7 +37,7 @@ contract HashmaskSwapper {
   /**
    @dev Propose a swap between two names (current and desired) and deposit NFT into contract
    */
-  function setSwap(uint256 id, string calldata desiredName) external {
+  function setSwap(uint256 id, string calldata desiredName) external nonReentrant {
 
     require(hashmask.ownerOf(id) == msg.sender, "Not owner");
 
@@ -59,7 +60,7 @@ contract HashmaskSwapper {
   /**
    @dev Remove a proposed swap and get back the deposited NFT.
   */
-  function removeSwap(uint256 id) external {
+  function removeSwap(uint256 id) external nonReentrant {
 
     // Only original owner can remove the swap proposal
     require(msg.sender == originalOwner.get(id), "Not owner");
@@ -80,7 +81,7 @@ contract HashmaskSwapper {
     - Note: It is up to the caller to find a placeholder name that has not been used.
     - Front-ends can make this more convenient by selecting random strings.
    */
-  function takeSwap(uint256 swapId, uint256 takerId, string calldata placeholder) external {
+  function takeSwap(uint256 swapId, uint256 takerId, string calldata placeholder) external nonReentrant {
     NameSwap memory nameSwapPair = swapRecords[swapId];
 
     // Require that taker's NFT is actually the name requested by the swapPair
