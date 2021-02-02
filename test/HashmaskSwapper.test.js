@@ -208,6 +208,12 @@ contract("HashmaskSwapper tests", async accounts => {
     // Set up name sale for 100 FakeTokens
     await swapper.setNameSale(0, fakeToken.address, 100, {from: accounts[0]});
 
+    // Expect it to fail if someone tries to call takeSwap on it
+    await truffleAssert.reverts(
+      swapper.takeSwap(0, 1, "adihoahfa", {from: accounts[1]}),
+      "Not desired name."
+    );
+
     // Take the sale from accounts[1]
     await swapper.takeSell(0, 1, "howdy", {from: accounts[1]});
 
@@ -250,7 +256,7 @@ contract("HashmaskSwapper tests", async accounts => {
       await nct.approve(mask.address, web3.utils.toBN(amt), {from: accounts[0]});
       await nct.approve(mask.address, web3.utils.toBN(amt), {from: accounts[1]});
       
-      // Note no naming
+      // Note no naming for this test
 
       // Mint FakeToken to accounts[1]
       await fakeToken.mint(accounts[1], 100);
