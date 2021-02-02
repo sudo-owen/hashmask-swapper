@@ -6,12 +6,12 @@ import "./IHashmask.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/EnumerableMap.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
 
 contract HashmaskSwapper is ReentrancyGuard {
 
   using EnumerableMap for EnumerableMap.UintToAddressMap;
-
-  enum SwapType { Swap, Sell}  
+  using SafeMath for uint256;
 
   // Struct for the two names being swapped
   // name1 is the caller, name2 should be the taker
@@ -32,6 +32,12 @@ contract HashmaskSwapper is ReentrancyGuard {
 
   // Normal NCT name change fee
   uint256 public constant NAME_CHANGE_PRICE = 1830 * (10**18);
+
+  // Parameters for sale fees, 1% goes to XMON deployer
+  address public constant XMON_DEPLOYER =  0x75d4bdBf6593ed463e9625694272a0FF9a6D346F;
+  uint256 public constant BASE = 100;
+  uint256 public constant PAID_AMOUNT = 99;
+  uint256 public constant FEE_AMOUNT = 1;
 
   EnumerableMap.UintToAddressMap private originalOwner;
   mapping(uint256 => NameSwap) public swapRecords;
@@ -82,7 +88,7 @@ contract HashmaskSwapper is ReentrancyGuard {
 
   /**
     @dev Propose a name sell. Allows anyone with the tokens can accept the swap
-   * desiredName is set to "" which will allow any tokenId to claim
+   * desiredName is set to "" (empty string) which will allow any tokenId to take the swap
    */
   function setNameSale(uint256 id, address token, uint256 price) external {
     createSwap(id, "", token, price, NAME_CHANGE_PRICE);
@@ -99,13 +105,13 @@ contract HashmaskSwapper is ReentrancyGuard {
     uint256 transferAmount = swapRecords[id].escrowedNCTAmount;
 
     // Clear out storage
-    originalOwner.set(id, address(0));
+    originalOwner.remove(id);
     delete swapRecords[id];
 
     // Get back the original NFT
     hashmask.transferFrom(address(this), msg.sender, id);
 
-    // Get back the funds put in
+    // Get back the NCT tokens put in
     nct.transfer(msg.sender, transferAmount);
   }
 
@@ -115,12 +121,18 @@ contract HashmaskSwapper is ReentrancyGuard {
   function takeSell(uint256 swapId, uint256 takerId, string calldata placeholder1) external nonReentrant {
     NameSwap memory nameSwapPair = swapRecords[swapId];
 
+    // Only succeeds if desired name is "" (empty string)
     require((bytes(nameSwapPair.name2).length == 0), "Not sell swap");
 
     // Move tokens from the taker's address to the swap proposer's address
     IERC20 token = IERC20(nameSwapPair.token);
     (, address swapProposer) = originalOwner.at(swapId);
-    token.transferFrom(msg.sender, swapProposer, nameSwapPair.price);
+    uint256 tokensToSeller = nameSwapPair.price.mul(PAID_AMOUNT).div(BASE);
+    token.transferFrom(msg.sender, swapProposer, tokensToSeller);
+
+    // Move tokens to XMON deployer to collect sale fee
+    uint256 tokenFee = nameSwapPair.price.mul(FEE_AMOUNT).div(BASE);
+    token.transferFrom(msg.sender, XMON_DEPLOYER, tokenFee);
 
     // Give taker's NFT to contract for escrow
     hashmask.transferFrom(msg.sender, address(this), takerId);
@@ -138,7 +150,7 @@ contract HashmaskSwapper is ReentrancyGuard {
     address otherOwner = originalOwner.get(swapId);
 
     // Clean up records
-    originalOwner.set(swapId, address(0));
+    originalOwner.remove(swapId);
     delete swapRecords[swapId];
 
     // Transfer both NFTs back to their respective owners
@@ -177,7 +189,7 @@ contract HashmaskSwapper is ReentrancyGuard {
     address otherOwner = originalOwner.get(swapId);
 
     // Clean up records
-    originalOwner.set(swapId, address(0));
+    originalOwner.remove(swapId);
     delete swapRecords[swapId];
 
     // Transfer both NFTs back to their respective owners

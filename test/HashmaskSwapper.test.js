@@ -166,9 +166,65 @@ contract("HashmaskSwapper tests", async accounts => {
     results = await mask.tokenNameByIndex(1);
     expect(results).to.eql("a");
   });
+});
+
+contract("HashmaskSwapper tests", async accounts => {
+  it ("correctly allows someone to sell a name", async() => {
+    let mask = await maskArtifact.deployed();
+    let nct = await nctArtifact.deployed();
+    let swapper = await swapperArtifact.deployed();
+    let fakeToken = await fakeTokenArtifact.deployed();
+
+    // Mint id = 0 to accounts[0], id = 1 to accounts[1], id = 2 to accounts[2]
+    await mask.mintNFT(1, {from: accounts[0]});
+    await mask.mintNFT(1, {from: accounts[1]});
+    await mask.mintNFT(1, {from: accounts[2]});
+
+    // Mint a bunch of tokens to accounts[0]
+    await nct.mint(accounts[0], web3.utils.toBN(amt), {from: accounts[0]});
+    await nct.mint(accounts[1], web3.utils.toBN(amt), {from: accounts[0]});
+
+    // Approve the swapper to spend NCT and Masks
+    await mask.setApprovalForAll(swapper.address, true, {from: accounts[0]});
+    await nct.approve(swapper.address, web3.utils.toBN(amt), {from: accounts[0]});
+
+    await mask.setApprovalForAll(swapper.address, true, {from: accounts[1]});
+    await nct.approve(swapper.address, web3.utils.toBN(amt), {from: accounts[1]});
+
+    // Approve the Masks to spend NCT
+    await nct.approve(mask.address, web3.utils.toBN(amt), {from: accounts[0]});
+    await nct.approve(mask.address, web3.utils.toBN(amt), {from: accounts[1]});
+
+    // Mint FakeToken to accounts[1]
+    await fakeToken.mint(accounts[1], 100);
+
+    // Approve the swapper to spend FakeToken
+    await fakeToken.approve(swapper.address, web3.utils.toBN(amt), {from: accounts[1]});
+
+    // Set name of NFT 0 to be "a" and NFT 0 to be "b"
+    await mask.changeName(0, "a", {from: accounts[0]});
+    await mask.changeName(1, "b", {from: accounts[1]});
+
+    // Set up name sale for 100 FakeTokens
+    await swapper.setNameSale(0, fakeToken.address, 100, {from: accounts[0]});
+
+    // Take the sale from accounts[1]
+    await swapper.takeSell(0, 1, "howdy", {from: accounts[1]});
+
+    // Expect accounts[0] to have 100 and accounts[1] to have 0
+    results = await fakeToken.balanceOf(accounts[0]);
+    expect(results).to.eql(web3.utils.toBN(99));
+    results = await fakeToken.balanceOf(accounts[1]);
+    expect(results).to.eql(web3.utils.toBN(0));
+
+    // Expect XMON deployer to have 1 FakeToken
+    results = await fakeToken.balanceOf('0x75d4bdBf6593ed463e9625694272a0FF9a6D346F');
+    expect(results).to.eql(web3.utils.toBN(1));
+  });
+});
 
   contract("HashmaskSwapper tests", async accounts => {
-    it ("correctly allows someone to sell a name", async() => {
+    it ("correctly allows people to remove their sells", async() => {
       let mask = await maskArtifact.deployed();
       let nct = await nctArtifact.deployed();
       let swapper = await swapperArtifact.deployed();
@@ -193,30 +249,39 @@ contract("HashmaskSwapper tests", async accounts => {
       // Approve the Masks to spend NCT
       await nct.approve(mask.address, web3.utils.toBN(amt), {from: accounts[0]});
       await nct.approve(mask.address, web3.utils.toBN(amt), {from: accounts[1]});
+      
+      // Note no naming
 
       // Mint FakeToken to accounts[1]
       await fakeToken.mint(accounts[1], 100);
 
-      // Approve the swapper to spend FakeToken
-      await fakeToken.approve(swapper.address, web3.utils.toBN(amt), {from: accounts[1]});
-  
-      // Set name of NFT 0 to be "a" and NFT 0 to be "b"
-      await mask.changeName(0, "a", {from: accounts[0]});
-      await mask.changeName(1, "b", {from: accounts[1]});
+      // Expect to have the same balance
+      results = await nct.balanceOf(accounts[0]);
+      expect(results).to.eql(web3.utils.toBN(amt));
 
-      // Set up name sale for 100 FakeTokens
-      await swapper.setNameSale(0, fakeToken.address, 100, {from: accounts[0]});
+      // Set up a sell for 100 FakeTokens for mask "a"
+      await swapper.setNameSale(0, fakeToken.address, 1, {from: accounts[0]});
 
-      // Take the sale from accounts[1]
-      await swapper.takeSell(0, 1, "howdy", {from: accounts[1]});
+      // Get the NameSwap object, expect it to have the right values
+      results = await swapper.swapRecords(0);
+      expect(results["name1"]).to.eql("");
+      expect(results["name2"]).to.eql("");
+      expect(results["token"]).to.eql(fakeToken.address);
+      expect(results["price"]).to.eql(web3.utils.toBN(1));
 
-      // Expect accounts[0] to have 100 and accounts[1] to have 0
-      results = await fakeToken.balanceOf(accounts[0]);
-      expect(results).to.eql(web3.utils.toBN(100));
-      results = await fakeToken.balanceOf(accounts[1]);
-      expect(results).to.eql(web3.utils.toBN(0));
-    });
+      // Make sure the contract owns the NFT
+      results = await mask.ownerOf(0);
+      expect(results).to.eql(swapper.address);
+
+      // Remove the name sell order
+      await swapper.removeSwap(0);
+
+      // Assert that accounts[0] gets the nft back
+      results = await mask.ownerOf(0);
+      expect(results).to.eql(accounts[0]);
+
+      // Assert NCT balance is unchanged for accounts[0]
+      results = await nct.balanceOf(accounts[0]);
+      expect(results).to.eql(web3.utils.toBN(amt));
   });
-
-
 });
