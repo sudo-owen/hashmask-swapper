@@ -56,10 +56,10 @@ contract HashmaskSwapper is ReentrancyGuard {
   function createSwap(uint256 id, string memory desiredName, address token, uint256 price, uint256 transferAmount) private nonReentrant {
     require(hashmask.ownerOf(id) == msg.sender, "Not owner");
 
-    // Record the swap, names are all set to lowercase
+    // Record the swap, names are not lowercase, lowercase is only checked when taking
     swapRecords[id] = NameSwap(
-      hashmask.toLower(hashmask.tokenNameByIndex(id)),
-      hashmask.toLower(desiredName),
+      hashmask.tokenNameByIndex(id),
+      desiredName,
       token,
       price,
       transferAmount
@@ -167,6 +167,7 @@ contract HashmaskSwapper is ReentrancyGuard {
     NameSwap memory nameSwapPair = swapRecords[swapId];
 
     // Require that taker's NFT's is actually the name requested by the swapPair
+    // Both names are set to lowercase here
     require(sha256(bytes(hashmask.toLower(hashmask.tokenNameByIndex(takerId)))) ==
     sha256(bytes(hashmask.toLower(nameSwapPair.name2))), "Not desired name");
 
@@ -197,6 +198,24 @@ contract HashmaskSwapper is ReentrancyGuard {
     hashmask.transferFrom(address(this), otherOwner, swapId);
   }
 
+  function doubleNameSwap(uint256 id, string calldata name1, string calldata name2) external nonReentrant {
+
+    // Give NFT to contract for escrow
+    hashmask.transferFrom(msg.sender, address(this), id);
+
+    // Transfer enough tokens to do the name change (note this is also 200%% the normal price because we are about to do 2 swaps)
+    nct.transferFrom(msg.sender, address(this), NAME_CHANGE_PRICE.mul(2));
+
+    // Set takerId to be first name
+    hashmask.changeName(id, name1);
+
+    // Set swapId to be second name
+    hashmask.changeName(id, name2);
+
+    hashmask.transferFrom(address(this), msg.sender, id);
+  }
+
+  // TODO: Separate this into open sales and open swaps
   function getAllOpenSwaps() public view returns(uint256[] memory) {
     uint256 len = originalOwner.length();
     uint256[] memory swapList = new uint256[](len);
